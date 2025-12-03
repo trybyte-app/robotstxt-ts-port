@@ -1,0 +1,41 @@
+{
+  "name": "robotstxt-parser",
+  "version": "1.0.0",
+  "description": "Google's robots.txt parser ported to TypeScript - RFC 9309 compliant",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "robots.txt",
+    "robots",
+    "parser",
+    "crawler",
+    "seo",
+    "geo",
+    "google",
+    "rfc9309"
+  ],
+  "author": "Alireza Esmikhani",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
