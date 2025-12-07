@@ -253,8 +253,12 @@ export class ParsedRobots {
 	 * Check multiple URLs for a single user-agent.
 	 * This is the fast operation - O(urls * rules) with no parsing overhead.
 	 *
+	 * Invalid or malformed URLs are handled gracefully - if the path cannot be
+	 * extracted, it defaults to "/" which typically allows access. No exceptions
+	 * are thrown for invalid input.
+	 *
 	 * @param userAgent - The user-agent to check (e.g., 'Googlebot', 'Googlebot/2.1')
-	 * @param urls - Array of URLs to check (must be %-encoded per RFC3986)
+	 * @param urls - Array of URLs to check (should be %-encoded per RFC3986)
 	 * @returns Array of results in the same order as input URLs
 	 */
 	public checkUrls(userAgent: string, urls: string[]): UrlCheckResult[] {
@@ -274,8 +278,11 @@ export class ParsedRobots {
 	/**
 	 * Check a single URL (convenience method).
 	 *
+	 * Invalid or malformed URLs are handled gracefully - if the path cannot be
+	 * extracted, it defaults to "/" which typically allows access.
+	 *
 	 * @param userAgent - The user-agent to check
-	 * @param url - The URL to check (must be %-encoded per RFC3986)
+	 * @param url - The URL to check (should be %-encoded per RFC3986)
 	 * @returns Result with detailed match information
 	 */
 	public checkUrl(userAgent: string, url: string): UrlCheckResult {

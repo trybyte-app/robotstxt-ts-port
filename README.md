@@ -276,6 +276,53 @@ The parser supports standard robots.txt pattern syntax:
 
 **Priority**: When both Allow and Disallow match, the longer pattern wins.
 
+## Production Usage
+
+This library is designed for correctness and RFC 9309 compliance. When using it in production environments that fetch robots.txt from untrusted sources, consider these safeguards:
+
+### File Size Limits
+
+The library does not enforce file size limits. Both RFC 9309 and Google require parsing at least 500 KiB. Implement size checks before parsing:
+
+```typescript
+const MAX_ROBOTS_SIZE = 500 * 1024; // 500 KiB (per RFC 9309)
+
+async function fetchAndParse(url: string) {
+  const response = await fetch(url);
+  const contentLength = response.headers.get('content-length');
+
+  if (contentLength && parseInt(contentLength) > MAX_ROBOTS_SIZE) {
+    throw new Error('robots.txt too large');
+  }
+
+  const text = await response.text();
+  if (text.length > MAX_ROBOTS_SIZE) {
+    throw new Error('robots.txt too large');
+  }
+
+  return ParsedRobots.parse(text);
+}
+```
+
+### Timeouts
+
+Implement timeouts when fetching robots.txt to prevent hanging requests.
+
+## Google-Specific Behaviors
+
+This library is a port of Google's C++ parser and includes several behaviors that are Google-specific extensions beyond RFC 9309:
+
+| Behavior | Google | RFC 9309 |
+|----------|--------|----------|
+| **Line length limit** | Truncates at 16,664 bytes | No limit specified |
+| **Typo tolerance** | Accepts "disalow", "useragent", etc. | "MAY be lenient" (unspecified) |
+| **index.html normalization** | `Allow: /path/index.html` also allows `/path/` | Not specified |
+| **User-agent `*` with trailing text** | `* foo` treated as global agent | Not specified |
+
+The core matching behavior (longest-match-wins, case-insensitive user-agent matching, UTF-8 encoding) follows RFC 9309.
+
+**Note:** This library only handles parsing and matching. HTTP behaviors like redirect following, caching, and status code handling are your responsibility to implement.
+
 ## Project Structure
 
 ```

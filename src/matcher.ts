@@ -184,6 +184,14 @@ export class RobotsMatcher extends RobotsParseHandler {
 	/**
 	 * Returns true iff 'url' is allowed to be fetched by any member of the
 	 * "userAgents" array. 'url' must be %-encoded according to RFC3986.
+	 *
+	 * Invalid or malformed URLs are handled gracefully - if the path cannot be
+	 * extracted, it defaults to "/" which typically allows access.
+	 *
+	 * @param robotsBody - The robots.txt content to parse
+	 * @param userAgents - Array of user-agent strings to check
+	 * @param url - The URL to check (should be %-encoded per RFC3986)
+	 * @returns true if access is allowed, false if disallowed
 	 */
 	public allowedByRobots(
 		robotsBody: string,
@@ -201,6 +209,14 @@ export class RobotsMatcher extends RobotsParseHandler {
 	/**
 	 * Do robots check for 'url' when there is only one user agent. 'url' must
 	 * be %-encoded according to RFC3986.
+	 *
+	 * Invalid or malformed URLs are handled gracefully - if the path cannot be
+	 * extracted, it defaults to "/" which typically allows access.
+	 *
+	 * @param robotsTxt - The robots.txt content to parse
+	 * @param userAgent - The user-agent string to check
+	 * @param url - The URL to check (should be %-encoded per RFC3986)
+	 * @returns true if access is allowed, false if disallowed
 	 */
 	public oneAgentAllowedByRobots(
 		robotsTxt: string,
