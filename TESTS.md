@@ -20,9 +20,9 @@ This document provides comprehensive documentation of all tests in Google's robo
 
 | Metric           | Count             |
 | ---------------- | ----------------- |
-| Total Test Files | 4                 |
-| Total Test Cases | 196               |
-| Total Assertions | 476               |
+| Total Test Files | 5                 |
+| Total Test Cases | 206               |
+| Total Assertions | 495               |
 | Coverage         | 100% of C++ tests |
 
 ## Test Naming Conventions
@@ -46,6 +46,7 @@ This document provides comprehensive documentation of all tests in Google's robo
 2. **tests/reporter.test.ts** - Reporting/parsing metadata tests (6 test cases)
 3. **tests/url-utils.test.ts** - URL utility function tests (22 test cases)
 4. **tests/bulk-check.test.ts** - Bulk URL checking API tests (23 test cases)
+5. **tests/stress.test.ts** - Performance and stress tests (10 test cases)
 
 ---
 
@@ -706,6 +707,84 @@ Test 2 - ParsedRobots reuse vs repeated parsing: 3. Batch check (single parse) i
 
 ---
 
+## Category F: Stress Tests (TypeScript Extension)
+
+These tests validate the library's performance and stability under extreme conditions.
+
+### StressTest_LargeFileHandling (stress.test.ts:18-63)
+
+**Purpose**: Tests parsing of large robots.txt files.
+
+**Assertions (3 total)**:
+
+Test 1 - 1MB robots.txt:
+1. Parser completes without crashing → expects TRUE
+2. Completes within 5 seconds → expects TRUE
+
+Test 2 - 100K lines:
+3. Parser handles 100,000 Disallow rules efficiently → expects TRUE
+
+Test 3 - Many user-agent groups:
+4. Parser handles 1,000 separate user-agent groups → expects TRUE
+
+**Edge Cases**: Memory efficiency, parsing speed with large inputs
+
+---
+
+### StressTest_PathologicalPatterns (stress.test.ts:65-124)
+
+**Purpose**: Tests pattern matching with complex wildcard patterns.
+
+**Assertions (3 total)**:
+
+Test 1 - Many wildcards:
+1. Pattern `/a*b*c*d*e*f*g*h*i*j*` matches efficiently → expects TRUE (< 100ms)
+
+Test 2 - Deeply nested wildcards:
+2. Pattern with 16 wildcard segments matches efficiently → expects TRUE
+
+Test 3 - Many rules with same prefix:
+3. 10,000 rules starting with `/api/v1/users/` checked efficiently → expects TRUE
+
+**Edge Cases**: Avoids exponential backtracking in pattern matching
+
+---
+
+### StressTest_BulkURLCheckingPerformance (stress.test.ts:126-146)
+
+**Purpose**: Tests bulk URL checking at scale.
+
+**Assertions (2 total)**:
+
+Test 1 - 10K URLs:
+1. 10,000 URLs processed → expects 10,000 results
+2. Completes under 1 second → expects TRUE
+
+**Edge Cases**: Linear scaling with URL count
+
+---
+
+### StressTest_EdgeCases (stress.test.ts:148-188)
+
+**Purpose**: Tests graceful handling of edge cases.
+
+**Assertions (5 total)**:
+
+Test 1 - Empty robots.txt:
+1. Returns allowed (true) → expects TRUE
+
+Test 2 - Comments only:
+2. Returns allowed (true) → expects TRUE
+
+Test 3 - Malformed URLs:
+3. Empty URL doesn't throw → expects no exception
+4. Invalid URL doesn't throw → expects no exception
+5. Missing scheme URL doesn't throw → expects no exception
+
+**Edge Cases**: Graceful degradation with invalid input
+
+---
+
 ## Helper Classes
 
 ### RobotsStatsReporter (robots_test.cc:765-819)
@@ -869,7 +948,7 @@ The TypeScript port has been verified to provide **100% test coverage** of all C
 bun test
 
 # Expected output:
-# 173 pass
+# 206 pass
 # 0 fail
-# 420 expect() calls
+# 495 expect() calls
 ```

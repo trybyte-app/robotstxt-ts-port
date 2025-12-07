@@ -1,52 +1,54 @@
 {
-  "name": "@trybyte/robotstxt-parser",
-  "version": "1.0.0",
-  "description": "Google's robots.txt parser ported to TypeScript - RFC 9309 compliant",
-  "keywords": [
-    "robots.txt",
-    "robots",
-    "parser",
-    "crawler",
-    "seo",
-    "geo",
-    "google",
-    "rfc9309"
-  ],
-  "homepage": "https://github.com/trybyte-app/robotstxt-ts-port#readme",
-  "bugs": {
-    "url": "https://github.com/trybyte-app/robotstxt-ts-port/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/trybyte-app/robotstxt-ts-port.git"
-  },
-  "license": "Apache-2.0",
-  "author": "Alireza Esmikhani",
-  "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "directories": {
-    "test": "tests"
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsc",
-    "test": "bun test",
-    "prepublishOnly": "bun run build"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.0.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  }
+	"name": "@trybyte/robotstxt-parser",
+	"version": "1.0.0",
+	"description": "Google's robots.txt parser ported to TypeScript - RFC 9309 compliant",
+	"keywords": [
+		"robots.txt",
+		"robots",
+		"parser",
+		"crawler",
+		"seo",
+		"geo",
+		"google",
+		"rfc9309"
+	],
+	"homepage": "https://github.com/trybyte-app/robotstxt-ts-port#readme",
+	"bugs": {
+		"url": "https://github.com/trybyte-app/robotstxt-ts-port/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/trybyte-app/robotstxt-ts-port.git"
+	},
+	"license": "Apache-2.0",
+	"author": "Byte Team (trybyte.app)",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"directories": {
+		"test": "tests"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc",
+		"test": "bun test",
+		"prepublishOnly": "bun run build",
+		"format": "prettier \"**/*.{js,jsx,mjs,ts,tsx,json,jsonc}\" --write"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"prettier": "^3.7.4",
+		"typescript": "^5.0.0"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
 }
