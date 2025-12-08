@@ -123,6 +123,45 @@ describe("BulkCheck_EdgeCases", () => {
 		expect(results[0].matchedRuleType).toBe("none");
 	});
 
+	test("Empty Disallow allows everything (RFC 9309 compliance)", () => {
+		// RFC 9309: "If the value is empty, the rule is ignored"
+		// An empty Disallow: means "allow all" - it should NOT block any URLs
+		const robotstxt = `
+User-agent: *
+Disallow:
+`;
+
+		const urls = [
+			"http://example.com/",
+			"http://example.com/anything",
+			"http://example.com/private/secret",
+			"http://example.com/admin/dashboard",
+		];
+
+		// Test with ParsedRobots (where the bug was)
+		const parsed = ParsedRobots.parse(robotstxt);
+		const parsedResults = parsed.checkUrls("MyBot", urls);
+		for (const result of parsedResults) {
+			expect(result.allowed).toBe(true);
+		}
+
+		// Test with RobotsMatcher (already worked correctly)
+		const matcher = new RobotsMatcher();
+		for (const url of urls) {
+			expect(matcher.oneAgentAllowedByRobots(robotstxt, "MyBot", url)).toBe(
+				true,
+			);
+		}
+
+		// Ensure both APIs return the same result
+		const batchResults = RobotsMatcher.batchCheck(robotstxt, "MyBot", urls);
+		for (let i = 0; i < urls.length; i++) {
+			expect(batchResults[i].allowed).toBe(
+				matcher.oneAgentAllowedByRobots(robotstxt, "MyBot", urls[i]),
+			);
+		}
+	});
+
 	test("Empty URL list returns empty array", () => {
 		const results = RobotsMatcher.batchCheck(
 			"User-agent: *\nDisallow: /",
@@ -381,6 +420,98 @@ Allow: /
 			expect(batchResults[i].allowed).toBe(singleResult);
 		}
 	});
+});
+
+describe("BulkCheck_ComprehensiveConsistency", () => {
+	// Edge cases that could potentially differ between bulk and single URL parsing
+	const edgeCases = [
+		{
+			name: "Empty Disallow only",
+			robotstxt: "User-agent: *\nDisallow:\n",
+		},
+		{
+			name: "Empty Allow only",
+			robotstxt: "User-agent: *\nAllow:\n",
+		},
+		{
+			name: "Both empty Allow and Disallow",
+			robotstxt: "User-agent: *\nDisallow:\nAllow:\n",
+		},
+		{
+			name: "Empty Disallow with non-empty Allow",
+			robotstxt: "User-agent: *\nDisallow:\nAllow: /public/\n",
+		},
+		{
+			name: "Empty Allow with non-empty Disallow",
+			robotstxt: "User-agent: *\nAllow:\nDisallow: /private/\n",
+		},
+		{
+			name: "Disallow / with empty Allow",
+			robotstxt: "User-agent: *\nDisallow: /\nAllow:\n",
+		},
+		{
+			name: "Empty user-agent with rules",
+			robotstxt: "User-agent:\nDisallow: /private/\n",
+		},
+		{
+			name: "Global and specific agent in same group",
+			robotstxt: "User-agent: *\nUser-agent: Googlebot\nDisallow: /private/\n",
+		},
+		{
+			name: "Same agent in multiple groups",
+			robotstxt:
+				"User-agent: Googlebot\nDisallow: /a/\n\nUser-agent: Googlebot\nDisallow: /b/\n",
+		},
+		{
+			name: "Whitespace-only value",
+			robotstxt: "User-agent: *\nDisallow:   \n",
+		},
+		{
+			name: "Root pattern with equal length Allow",
+			robotstxt: "User-agent: *\nDisallow: /\nAllow: /\n",
+		},
+		{
+			name: "index.html normalization",
+			robotstxt: "User-agent: *\nAllow: /allowed/index.html\nDisallow: /\n",
+		},
+	];
+
+	const testUrls = [
+		"http://example.com/",
+		"http://example.com/private/",
+		"http://example.com/private/doc.html",
+		"http://example.com/public/",
+		"http://example.com/public/doc.html",
+		"http://example.com/a/",
+		"http://example.com/b/",
+		"http://example.com/allowed/",
+		"http://example.com/allowed/index.html",
+		"http://example.com/other/path",
+	];
+
+	// Note: Empty agent ("") is excluded as it's documented invalid input
+	// (RobotsMatcher.isValidUserAgentToObey("") returns false)
+	const testAgents = ["MyBot", "Googlebot", "Bingbot"];
+
+	for (const { name, robotstxt } of edgeCases) {
+		test(`Edge case: ${name}`, () => {
+			const matcher = new RobotsMatcher();
+			const parsed = ParsedRobots.parse(robotstxt);
+
+			for (const agent of testAgents) {
+				for (const url of testUrls) {
+					const singleResult = matcher.oneAgentAllowedByRobots(
+						robotstxt,
+						agent,
+						url,
+					);
+					const bulkResult = parsed.checkUrl(agent, url);
+
+					expect(bulkResult.allowed).toBe(singleResult);
+				}
+			}
+		});
+	}
 });
 
 describe("BulkCheck_Performance", () => {

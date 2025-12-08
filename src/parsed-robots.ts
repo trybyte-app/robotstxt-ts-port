@@ -128,6 +128,10 @@ class RulesCollectorHandler extends RobotsParseHandler {
 	}
 
 	public handleAllow(lineNum: number, value: string): void {
+		// Empty Allow is a no-op - it doesn't add any permissions beyond the default.
+		// Skip to avoid creating unnecessary rules and misleading match reporting.
+		if (value.length === 0) return;
+
 		this.addRule(lineNum, value, true);
 
 		// Google-specific: index.html normalization
@@ -143,6 +147,11 @@ class RulesCollectorHandler extends RobotsParseHandler {
 	}
 
 	public handleDisallow(lineNum: number, value: string): void {
+		// RFC 9309: Empty Disallow means "allow all" - don't create a blocking rule.
+		// An empty pattern would match everything (empty string is prefix of all strings)
+		// but with priority 0, which should not block access.
+		if (value.length === 0) return;
+
 		this.addRule(lineNum, value, false);
 	}
 
