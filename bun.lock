@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "robotstxt-ts-port",
+      "name": "@trybyte/robotstxt-parser",
       "devDependencies": {
         "@types/bun": "latest",
         "prettier": "^3.7.4",

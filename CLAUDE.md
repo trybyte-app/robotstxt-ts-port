@@ -1,48 +1,49 @@
-# CLAUDE.md
+# Repository guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This package is a dependency-free TypeScript robots.txt compiler and matcher. Version 2 has two public operations. `compileRobotsText()` creates crawler-scoped matchers, while `inspectRobotsText()` returns a parsed-line report.
 
-## Project Overview
-
-TypeScript port of Google's official C++ robots.txt parser, compliant with RFC 9309 (Robots Exclusion Protocol). This is a pure TypeScript library with zero runtime dependencies.
+Do not restore version 1 classes or compatibility aliases. The removed API includes `RobotsMatcher`, `ParsedRobots`, parser callbacks, `RobotsParsingReporter`, public matching strategies, and parser utility exports.
 
 ## Commands
 
 ```bash
-bun install        # Install dependencies
-bun test           # Run all tests
-bun test tests/matcher.test.ts              # Run a single test file
-bun test --test-name-pattern "SystemTest"   # Run tests matching a pattern
-bun run build      # Build to dist/ (runs tsc)
+bun install --frozen-lockfile
+bun test
+bun test tests/public-interface.test.ts
+bun test --test-name-pattern "bulk methods"
+bun run build
+bun run format
 ```
 
-## Architecture
+The package targets Node.js 22 or newer and has no runtime dependencies.
 
-The codebase is a direct port from Google's C++ implementation. Key design decisions:
+## Code map
 
-**Parser-Handler Pattern**: The parser (`parser.ts`) doesn't return data structures. Instead, it calls handler methods on a `RobotsParseHandler` interface. This allows different consumers:
+- `src/index.ts` exports the complete public API.
+- `src/model.ts` defines public types, report records, evidence records, and `InvalidCrawlerIdentityError`.
+- `src/compile.ts` validates policy and crawler inputs. It builds compiled documents, crawler-scoped matchers, and inspection reports.
+- `src/engine.ts` contains policy-specific parsing, rule selection, URL path handling, pattern matching, decisions, and report collection.
+- `tests/matcher.test.ts` keeps cases adapted from Google's C++ suite. Preserve upstream `describe()` labels when they help trace a case back to its source.
+- `tests/google-parity.test.ts` records version 2 Google compatibility regressions.
+- `tests/rfc9309-policy.test.ts` records behavior required by the strict policy.
+- `tests/public-interface.test.ts` protects the public API, evidence, reports, validation, and bulk iterator contract.
 
-- `RobotsMatcher` implements the handler to match URLs against rules
-- `RobotsParsingReporter` implements the handler to collect parse statistics
+## Design rules
 
-**Match Priority System**: When both Allow and Disallow patterns match a URL, the longest pattern wins. This is implemented via the `RobotsMatchStrategy` interface in `match-strategy.ts`. Priority is stored as pattern length; -1 indicates no match.
+Compilation and inspection are separate on purpose. A compiled matcher must not retain parsed-line report data.
 
-**Two-tier Matching**: Rules are tracked separately for global (`*`) and specific user-agents. If specific agent rules exist, global rules are ignored.
+Bind crawler identity before matching URLs. `forCrawler()` normalizes a valid `Product` or `Product/Version` input to a lowercase product token and selects rules once.
 
-## Module Responsibilities
+Keep bulk methods lazy and single-pass. They must preserve input order and must work with an iterable that rejects a second iterator request.
 
-- `matcher.ts` - Main entry point: `RobotsMatcher.oneAgentAllowedByRobots()` and `allowedByRobots()`
-- `parsed-robots.ts` - `ParsedRobots` for bulk checking: parse once, check many URLs via `checkUrls()`
-- `parser.ts` - Line-by-line parsing, handles BOM, CRLF/LF, comments, long lines
-- `pattern-matcher.ts` - Wildcard (`*`) and anchor (`$`) pattern matching
-- `parsed-key.ts` - Directive recognition with typo tolerance (e.g., "disalow", "useragent")
-- `reporter.ts` - `RobotsParsingReporter` for collecting parse statistics
-- `url-utils.ts` - Path extraction and percent-encoding normalization
+Do not force Google and RFC 9309 through shared behavior when their rules differ. Google mode keeps Google's accepted misspellings, prefix recognition, byte limit, and `index.htm` handling. RFC mode keeps exact syntax, RFC percent-encoding comparison, path grammar, octet-based priority, and the `/robots.txt` allowance.
 
-## Testing Notes
+Every match decision must explain itself. A winning rule reports its directive, original source pattern, and line number. A default allow reports `no-group`, `empty-group`, `no-match`, or `robots-txt`.
 
-Tests mirror the original C++ test suite structure. When porting new tests from `robots_test.cc`:
+Use the vocabulary in `CONTEXT.md` in code comments, tests, and documentation.
 
-- Use `describe()` for test groups matching C++ test names
-- Use `isUserAgentAllowed()` helper for simple allow/disallow checks
-- Test both the positive and negative cases for each pattern
+## Test changes
+
+Add a focused regression before changing policy behavior. If the change follows Google, place it in `google-parity.test.ts` or the matching upstream section in `matcher.test.ts`. If it follows RFC 9309, place it in `rfc9309-policy.test.ts`. Public contracts belong in `public-interface.test.ts`.
+
+Test both the allowed and disallowed result when a pattern change can affect either side. For bulk code, include a single-use iterable or a partial-consumption check so an eager implementation fails visibly.

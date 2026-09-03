@@ -1,7 +1,7 @@
 {
 	"name": "@trybyte/robotstxt-parser",
-	"version": "1.2.0",
-	"description": "Google's robots.txt parser ported to TypeScript - RFC 9309 compliant",
+	"version": "2.0.0",
+	"description": "Compile robots.txt rules for Google-compatible or strict RFC 9309 matching",
 	"keywords": [
 		"robots.txt",
 		"robots",
@@ -23,6 +23,7 @@
 	"license": "Apache-2.0",
 	"author": "Byte Team (trybyte.app)",
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -35,7 +36,11 @@
 		"test": "tests"
 	},
 	"files": [
-		"dist"
+		"dist/index.*",
+		"dist/compile.*",
+		"dist/engine.*",
+		"dist/model.*",
+		"src/*.ts"
 	],
 	"scripts": {
 		"build": "tsc",
@@ -49,6 +54,6 @@
 		"typescript": "^5.0.0"
 	},
 	"engines": {
-		"node": ">=20.0.0"
+		"node": ">=22.0.0"
 	}
 }

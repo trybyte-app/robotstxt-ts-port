@@ -14,68 +14,67 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	RobotsMatcher,
-	RobotsParseHandler,
-	parseRobotsTxt,
-	type LineMetadata,
+	compileRobotsText,
+	InvalidCrawlerIdentityError,
 } from "../src/index.js";
 
-/**
- * Helper function to check if a user agent is allowed for a URL.
- */
+/** Checks whether one crawler identity may access one URL. */
 function isUserAgentAllowed(
 	robotstxt: string,
 	useragent: string,
 	url: string,
 ): boolean {
-	const matcher = new RobotsMatcher();
-	return matcher.oneAgentAllowedByRobots(robotstxt, useragent, url);
+	return compileRobotsText(robotstxt).forCrawler(useragent).isAllowed(url);
 }
 
-// Google-specific: system test.
+// Google system cases.
 describe("GoogleOnly_SystemTest", () => {
 	const robotstxt = "user-agent: FooBot\ndisallow: /\n";
 
-	test("Empty robots.txt: everything allowed", () => {
+	test("allows every URL when robots text is empty", () => {
 		expect(isUserAgentAllowed("", "FooBot", "")).toBe(true);
 	});
 
-	test("Empty user-agent to be matched: everything allowed", () => {
-		expect(isUserAgentAllowed(robotstxt, "", "")).toBe(true);
+	test("rejects an empty caller identity", () => {
+		expect(() => isUserAgentAllowed(robotstxt, "", "")).toThrow(
+			InvalidCrawlerIdentityError,
+		);
 	});
 
-	test("Empty url: implicitly disallowed", () => {
+	test("treats an empty URL as the root path", () => {
 		expect(isUserAgentAllowed(robotstxt, "FooBot", "")).toBe(false);
 	});
 
-	test("All params empty: same as robots.txt empty, everything allowed", () => {
-		expect(isUserAgentAllowed("", "", "")).toBe(true);
+	test("requires a valid caller identity even when robots text is empty", () => {
+		expect(() => isUserAgentAllowed("", "", "")).toThrow(
+			InvalidCrawlerIdentityError,
+		);
 	});
 });
 
-// Rules are colon separated name-value pairs.
+// Directives use a colon between the name and value.
 describe("ID_LineSyntax_Line", () => {
 	const robotstxtCorrect = "user-agent: FooBot\ndisallow: /\n";
 	const robotstxtIncorrect = "foo: FooBot\nbar: /\n";
 	const robotstxtIncorrectAccepted = "user-agent FooBot\ndisallow /\n";
 	const url = "http://foo.bar/x/y";
 
-	test("Correct syntax with colon", () => {
+	test("recognizes directives with a colon", () => {
 		expect(isUserAgentAllowed(robotstxtCorrect, "FooBot", url)).toBe(false);
 	});
 
-	test("Incorrect key names", () => {
+	test("ignores unknown directive names", () => {
 		expect(isUserAgentAllowed(robotstxtIncorrect, "FooBot", url)).toBe(true);
 	});
 
-	test("Missing colon but accepted (Google-specific)", () => {
+	test("accepts Google's two-token syntax without a colon", () => {
 		expect(isUserAgentAllowed(robotstxtIncorrectAccepted, "FooBot", url)).toBe(
 			false,
 		);
 	});
 });
 
-// A group is one or more user-agent line followed by rules.
+// A group has one or more user-agent lines followed by rules.
 describe("ID_LineSyntax_Groups", () => {
 	const robotstxt =
 		"allow: /foo/bar/\n" +
@@ -101,50 +100,50 @@ describe("ID_LineSyntax_Groups", () => {
 	const urlZ = "http://foo.bar/z/d";
 	const urlFoo = "http://foo.bar/foo/bar/";
 
-	test("FooBot allowed /x/", () => {
+	test("allows FooBot on /x/", () => {
 		expect(isUserAgentAllowed(robotstxt, "FooBot", urlX)).toBe(true);
 	});
 
-	test("FooBot allowed /z/", () => {
+	test("allows FooBot on /z/", () => {
 		expect(isUserAgentAllowed(robotstxt, "FooBot", urlZ)).toBe(true);
 	});
 
-	test("FooBot disallowed /y/", () => {
+	test("disallows FooBot on /y/", () => {
 		expect(isUserAgentAllowed(robotstxt, "FooBot", urlY)).toBe(false);
 	});
 
-	test("BarBot allowed /y/", () => {
+	test("allows BarBot on /y/", () => {
 		expect(isUserAgentAllowed(robotstxt, "BarBot", urlY)).toBe(true);
 	});
 
-	test("BarBot allowed /w/", () => {
+	test("allows BarBot on /w/", () => {
 		expect(isUserAgentAllowed(robotstxt, "BarBot", urlW)).toBe(true);
 	});
 
-	test("BarBot disallowed /z/", () => {
+	test("disallows BarBot on /z/", () => {
 		expect(isUserAgentAllowed(robotstxt, "BarBot", urlZ)).toBe(false);
 	});
 
-	test("BazBot allowed /z/", () => {
+	test("allows BazBot on /z/", () => {
 		expect(isUserAgentAllowed(robotstxt, "BazBot", urlZ)).toBe(true);
 	});
 
-	test("Rules outside groups are ignored - FooBot", () => {
+	test("ignores rules outside FooBot's groups", () => {
 		expect(isUserAgentAllowed(robotstxt, "FooBot", urlFoo)).toBe(false);
 	});
 
-	test("Rules outside groups are ignored - BarBot", () => {
+	test("ignores rules outside BarBot's groups", () => {
 		expect(isUserAgentAllowed(robotstxt, "BarBot", urlFoo)).toBe(false);
 	});
 
-	test("Rules outside groups are ignored - BazBot", () => {
+	test("ignores rules outside BazBot's groups", () => {
 		expect(isUserAgentAllowed(robotstxt, "BazBot", urlFoo)).toBe(false);
 	});
 });
 
-// Group must not be closed by rules not explicitly defined in the REP RFC.
+// Records outside the REP grammar do not close a group.
 describe("ID_LineSyntax_Groups_OtherRules", () => {
-	test("Sitemap doesn't close group", () => {
+	test("does not close a group at a sitemap directive", () => {
 		const robotstxt =
 			"User-agent: BarBot\n" +
 			"Sitemap: https://foo.bar/sitemap\n" +
@@ -156,7 +155,7 @@ describe("ID_LineSyntax_Groups_OtherRules", () => {
 		expect(isUserAgentAllowed(robotstxt, "BarBot", url)).toBe(false);
 	});
 
-	test("Unknown directive doesn't close group", () => {
+	test("does not close a group at an unknown directive", () => {
 		const robotstxt =
 			"User-agent: FooBot\n" +
 			"Invalid-Unknown-Line: unknown\n" +
@@ -169,7 +168,7 @@ describe("ID_LineSyntax_Groups_OtherRules", () => {
 	});
 });
 
-// REP lines are case insensitive.
+// REP directive names are case-insensitive.
 describe("ID_REPLineNamesCaseInsensitive", () => {
 	const robotstxtUpper = "USER-AGENT: FooBot\nALLOW: /x/\nDISALLOW: /\n";
 	const robotstxtLower = "user-agent: FooBot\nallow: /x/\ndisallow: /\n";
@@ -177,77 +176,59 @@ describe("ID_REPLineNamesCaseInsensitive", () => {
 	const urlAllowed = "http://foo.bar/x/y";
 	const urlDisallowed = "http://foo.bar/a/b";
 
-	test("UPPER case - allowed URL", () => {
+	test("allows the URL with uppercase directive names", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "FooBot", urlAllowed)).toBe(true);
 	});
 
-	test("lower case - allowed URL", () => {
+	test("allows the URL with lowercase directive names", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "FooBot", urlAllowed)).toBe(true);
 	});
 
-	test("CaMeL case - allowed URL", () => {
+	test("allows the URL with mixed-case directive names", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "FooBot", urlAllowed)).toBe(true);
 	});
 
-	test("UPPER case - disallowed URL", () => {
+	test("disallows the URL with uppercase directive names", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "FooBot", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("lower case - disallowed URL", () => {
+	test("disallows the URL with lowercase directive names", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "FooBot", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("CaMeL case - disallowed URL", () => {
+	test("disallows the URL with mixed-case directive names", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "FooBot", urlDisallowed)).toBe(
 			false,
 		);
 	});
 });
 
-// A user-agent line is expected to contain only [a-zA-Z_-] characters.
+// A robots-text user-agent value may contain ASCII letters, underscores, and hyphens.
 describe("ID_VerifyValidUserAgentsToObey", () => {
-	test("Valid: Foobot", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot")).toBe(true);
-	});
+	test.each(["Foobot", "Foobot-Bar", "Foo_Bar", "Foobot/2.1"])(
+		"accepts and normalizes caller identity %s",
+		(identity) => {
+			expect(compileRobotsText("").forCrawler(identity).identity).toBe(
+				identity.split("/")[0].toLowerCase(),
+			);
+		},
+	);
 
-	test("Valid: Foobot-Bar", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot-Bar")).toBe(true);
-	});
-
-	test("Valid: Foo_Bar", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foo_Bar")).toBe(true);
-	});
-
-	test("Invalid: empty string", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("")).toBe(false);
-	});
-
-	test("Invalid: Unicode character", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("ツ")).toBe(false);
-	});
-
-	test("Invalid: wildcard", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot*")).toBe(false);
-	});
-
-	test("Invalid: leading/trailing spaces", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey(" Foobot ")).toBe(false);
-	});
-
-	test("Invalid: version string", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot/2.1")).toBe(false);
-	});
-
-	test("Invalid: space in name", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot Bar")).toBe(false);
-	});
+	test.each(["", "ツ", "Foobot*", " Foobot ", "Foobot Bar"])(
+		"rejects caller identity %s",
+		(identity) => {
+			expect(() => compileRobotsText("").forCrawler(identity)).toThrow(
+				InvalidCrawlerIdentityError,
+			);
+		},
+	);
 });
 
-// User-agent line values are case insensitive.
+// User-agent values are case-insensitive.
 describe("ID_UserAgentValueCaseInsensitive", () => {
 	const robotstxtUpper = "User-Agent: FOO BAR\nAllow: /x/\nDisallow: /\n";
 	const robotstxtLower = "User-Agent: foo bar\nAllow: /x/\nDisallow: /\n";
@@ -255,71 +236,73 @@ describe("ID_UserAgentValueCaseInsensitive", () => {
 	const urlAllowed = "http://foo.bar/x/y";
 	const urlDisallowed = "http://foo.bar/a/b";
 
-	test("UPPER robots.txt, Foo agent - allowed URL", () => {
+	test("allows Foo with an uppercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "Foo", urlAllowed)).toBe(true);
 	});
 
-	test("lower robots.txt, Foo agent - allowed URL", () => {
+	test("allows Foo with a lowercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "Foo", urlAllowed)).toBe(true);
 	});
 
-	test("CaMeL robots.txt, Foo agent - allowed URL", () => {
+	test("allows Foo with a mixed-case robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "Foo", urlAllowed)).toBe(true);
 	});
 
-	test("UPPER robots.txt, Foo agent - disallowed URL", () => {
+	test("disallows Foo with an uppercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "Foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("lower robots.txt, Foo agent - disallowed URL", () => {
+	test("disallows Foo with a lowercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "Foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("CaMeL robots.txt, Foo agent - disallowed URL", () => {
+	test("disallows Foo with a mixed-case robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "Foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("UPPER robots.txt, foo agent - allowed URL", () => {
+	test("allows lowercase foo with an uppercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "foo", urlAllowed)).toBe(true);
 	});
 
-	test("lower robots.txt, foo agent - allowed URL", () => {
+	test("allows lowercase foo with a lowercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "foo", urlAllowed)).toBe(true);
 	});
 
-	test("CaMeL robots.txt, foo agent - allowed URL", () => {
+	test("allows lowercase foo with a mixed-case robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "foo", urlAllowed)).toBe(true);
 	});
 
-	test("UPPER robots.txt, foo agent - disallowed URL", () => {
+	test("disallows lowercase foo with an uppercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtUpper, "foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("lower robots.txt, foo agent - disallowed URL", () => {
+	test("disallows lowercase foo with a lowercase robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtLower, "foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 
-	test("CaMeL robots.txt, foo agent - disallowed URL", () => {
+	test("disallows lowercase foo with a mixed-case robots-text value", () => {
 		expect(isUserAgentAllowed(robotstxtCamel, "foo", urlDisallowed)).toBe(
 			false,
 		);
 	});
 });
 
-// Google-specific: accept user-agent value up to the first space.
+// Google reads a robots-text user-agent value only up to the first space.
 describe("GoogleOnly_AcceptUserAgentUpToFirstSpace", () => {
-	test("Foobot Bar is invalid user agent", () => {
-		expect(RobotsMatcher.isValidUserAgentToObey("Foobot Bar")).toBe(false);
+	test("rejects Foobot Bar as a caller identity", () => {
+		expect(() => compileRobotsText("").forCrawler("Foobot Bar")).toThrow(
+			InvalidCrawlerIdentityError,
+		);
 	});
 
 	const robotstxt =
@@ -330,12 +313,14 @@ describe("GoogleOnly_AcceptUserAgentUpToFirstSpace", () => {
 		"Disallow: /\n";
 	const url = "http://foo.bar/x/y";
 
-	test("Foo matches Foo Bar user-agent", () => {
+	test("matches Foo against a Foo Bar user-agent value", () => {
 		expect(isUserAgentAllowed(robotstxt, "Foo", url)).toBe(true);
 	});
 
-	test("Foo Bar invalid user-agent falls back to global", () => {
-		expect(isUserAgentAllowed(robotstxt, "Foo Bar", url)).toBe(false);
+	test("rejects Foo Bar before matching", () => {
+		expect(() => isUserAgentAllowed(robotstxt, "Foo Bar", url)).toThrow(
+			InvalidCrawlerIdentityError,
+		);
 	});
 });
 
@@ -354,51 +339,51 @@ describe("ID_GlobalGroups_Secondary", () => {
 		"disallow: /\n";
 	const url = "http://foo.bar/x/y";
 
-	test("Empty robots.txt allows all", () => {
+	test("allows every URL when robots text is empty", () => {
 		expect(isUserAgentAllowed(robotstxtEmpty, "FooBot", url)).toBe(true);
 	});
 
-	test("FooBot has specific disallow rule", () => {
+	test("uses FooBot's specific disallow rule", () => {
 		expect(isUserAgentAllowed(robotstxtGlobal, "FooBot", url)).toBe(false);
 	});
 
-	test("BarBot falls back to global allow", () => {
+	test("uses the global allow rule for BarBot", () => {
 		expect(isUserAgentAllowed(robotstxtGlobal, "BarBot", url)).toBe(true);
 	});
 
-	test("QuxBot allowed when no matching group or global", () => {
+	test("allows QuxBot when no specific or global group matches", () => {
 		expect(isUserAgentAllowed(robotstxtOnlySpecific, "QuxBot", url)).toBe(true);
 	});
 });
 
-// Matching rules against URIs is case sensitive.
+// Rule matching is case-sensitive.
 describe("ID_AllowDisallow_Value_CaseSensitive", () => {
 	const robotstxtLowercaseUrl = "user-agent: FooBot\ndisallow: /x/\n";
 	const robotstxtUppercaseUrl = "user-agent: FooBot\ndisallow: /X/\n";
 	const url = "http://foo.bar/x/y";
 
-	test("Lowercase pattern matches lowercase URL", () => {
+	test("matches a lowercase pattern against a lowercase URL", () => {
 		expect(isUserAgentAllowed(robotstxtLowercaseUrl, "FooBot", url)).toBe(
 			false,
 		);
 	});
 
-	test("Uppercase pattern does not match lowercase URL", () => {
+	test("does not match an uppercase pattern against a lowercase URL", () => {
 		expect(isUserAgentAllowed(robotstxtUppercaseUrl, "FooBot", url)).toBe(true);
 	});
 });
 
-// The most specific match found MUST be used.
+// The rule with the highest priority decides the result.
 describe("ID_LongestMatch", () => {
 	const url = "http://foo.bar/x/page.html";
 
-	test("Longer disallow wins over shorter allow", () => {
+	test("lets a longer disallow rule beat a shorter allow rule", () => {
 		const robotstxt =
 			"user-agent: FooBot\ndisallow: /x/page.html\nallow: /x/\n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(false);
 	});
 
-	test("Longer allow wins over shorter disallow", () => {
+	test("lets a longer allow rule beat a shorter disallow rule", () => {
 		const robotstxt =
 			"user-agent: FooBot\nallow: /x/page.html\ndisallow: /x/\n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(true);
@@ -407,12 +392,12 @@ describe("ID_LongestMatch", () => {
 		);
 	});
 
-	test("Empty patterns: allow wins on tie", () => {
+	test("allows by default when both patterns are empty", () => {
 		const robotstxt = "user-agent: FooBot\ndisallow: \nallow: \n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(true);
 	});
 
-	test("Root patterns: allow wins on tie", () => {
+	test("lets allow win when root patterns tie", () => {
 		const robotstxt = "user-agent: FooBot\ndisallow: /\nallow: /\n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(true);
 	});
@@ -427,13 +412,13 @@ describe("ID_LongestMatch", () => {
 		);
 	});
 
-	test("Same pattern: allow wins on tie", () => {
+	test("lets allow win when identical patterns tie", () => {
 		const robotstxt =
 			"user-agent: FooBot\ndisallow: /x/page.html\nallow: /x/page.html\n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(true);
 	});
 
-	test("Wildcard pattern vs literal", () => {
+	test("compares wildcard and literal pattern priority", () => {
 		const robotstxt = "user-agent: FooBot\nallow: /page\ndisallow: /*.html\n";
 		expect(
 			isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/page.html"),
@@ -443,7 +428,7 @@ describe("ID_LongestMatch", () => {
 		);
 	});
 
-	test("Longer allow with dot wins", () => {
+	test("lets a longer allow rule ending in a dot win", () => {
 		const robotstxt =
 			"user-agent: FooBot\nallow: /x/page.\ndisallow: /*.html\n";
 		expect(isUserAgentAllowed(robotstxt, "FooBot", url)).toBe(true);
@@ -452,7 +437,7 @@ describe("ID_LongestMatch", () => {
 		).toBe(false);
 	});
 
-	test("Specific agent vs global", () => {
+	test("uses specific rules instead of global rules", () => {
 		const robotstxt =
 			"User-agent: *\nDisallow: /x/\nUser-agent: FooBot\nDisallow: /y/\n";
 		expect(
@@ -464,9 +449,9 @@ describe("ID_LongestMatch", () => {
 	});
 });
 
-// Encoding tests.
+// Encoding behavior.
 describe("ID_Encoding", () => {
-	test("URL with query string stays unencoded", () => {
+	test("keeps a URL query string unencoded", () => {
 		const robotstxt =
 			"User-agent: FooBot\n" +
 			"Disallow: /\n" +
@@ -480,7 +465,7 @@ describe("ID_Encoding", () => {
 		).toBe(true);
 	});
 
-	test("3-byte UTF-8 character encoding", () => {
+	test("encodes a three-byte UTF-8 character", () => {
 		const robotstxt = "User-agent: FooBot\nDisallow: /\nAllow: /foo/bar/ツ\n";
 		expect(
 			isUserAgentAllowed(
@@ -489,13 +474,13 @@ describe("ID_Encoding", () => {
 				"http://foo.bar/foo/bar/%E3%83%84",
 			),
 		).toBe(true);
-		// The parser encodes the 3-byte character, but the URL is not %-encoded
+		// The parser encodes the three-byte character. The URL is not percent-encoded.
 		expect(
 			isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/foo/bar/ツ"),
 		).toBe(false);
 	});
 
-	test("Percent-encoded 3-byte character", () => {
+	test("matches a percent-encoded three-byte character", () => {
 		const robotstxt =
 			"User-agent: FooBot\nDisallow: /\nAllow: /foo/bar/%E3%83%84\n";
 		expect(
@@ -510,7 +495,7 @@ describe("ID_Encoding", () => {
 		).toBe(false);
 	});
 
-	test("Percent-encoded unreserved US-ASCII", () => {
+	test("matches percent-encoded unreserved US-ASCII", () => {
 		const robotstxt =
 			"User-agent: FooBot\nDisallow: /\nAllow: /foo/bar/%62%61%7A\n";
 		expect(
@@ -526,9 +511,9 @@ describe("ID_Encoding", () => {
 	});
 });
 
-// Special characters: *, $, #
+// Wildcards, end anchors, and comments.
 describe("ID_SpecialCharacters", () => {
-	test("Wildcard * pattern", () => {
+	test("matches a wildcard pattern", () => {
 		const robotstxt =
 			"User-agent: FooBot\nDisallow: /foo/bar/quz\nAllow: /foo/*/qux\n";
 		expect(
@@ -545,7 +530,7 @@ describe("ID_SpecialCharacters", () => {
 		).toBe(true);
 	});
 
-	test("End anchor $ pattern", () => {
+	test("matches a pattern with an end anchor", () => {
 		const robotstxt =
 			"User-agent: FooBot\nDisallow: /foo/bar$\nAllow: /foo/bar/qux\n";
 		expect(
@@ -562,7 +547,7 @@ describe("ID_SpecialCharacters", () => {
 		).toBe(true);
 	});
 
-	test("Comment # handling", () => {
+	test("removes comments before matching", () => {
 		const robotstxt =
 			"User-agent: FooBot\n# Disallow: /\nDisallow: /foo/quz#qux\nAllow: /\n";
 		expect(
@@ -574,18 +559,18 @@ describe("ID_SpecialCharacters", () => {
 	});
 });
 
-// Google-specific: "index.html" at end of pattern equals "/".
+// Google treats an index.htm prefix in the last path segment as its directory.
 describe("GoogleOnly_IndexHTMLisDirectory", () => {
 	const robotstxt =
 		"User-Agent: *\nAllow: /allowed-slash/index.html\nDisallow: /\n";
 
-	test("index.html allows directory", () => {
+	test("lets an index.html rule allow its directory", () => {
 		expect(
 			isUserAgentAllowed(robotstxt, "foobot", "http://foo.com/allowed-slash/"),
 		).toBe(true);
 	});
 
-	test("index.htm does not match exactly", () => {
+	test("does not require an exact index.htm suffix", () => {
 		expect(
 			isUserAgentAllowed(
 				robotstxt,
@@ -595,7 +580,7 @@ describe("GoogleOnly_IndexHTMLisDirectory", () => {
 		).toBe(false);
 	});
 
-	test("Exact match on index.html", () => {
+	test("matches index.html itself", () => {
 		expect(
 			isUserAgentAllowed(
 				robotstxt,
@@ -605,18 +590,18 @@ describe("GoogleOnly_IndexHTMLisDirectory", () => {
 		).toBe(true);
 	});
 
-	test("Other URLs are disallowed", () => {
+	test("disallows other URLs", () => {
 		expect(
 			isUserAgentAllowed(robotstxt, "foobot", "http://foo.com/anyother-url"),
 		).toBe(false);
 	});
 });
 
-// Google-specific: long lines are ignored after 8 * 2083 bytes.
+// Google truncates lines after 8 * 2083 minus one bytes.
 describe("GoogleOnly_LineTooLong", () => {
 	const kMaxLineLen = 2083 * 8;
 
-	test("Disallow rule cut off at max length", () => {
+	test("truncates a disallow rule at the byte limit", () => {
 		let robotstxt = "user-agent: FooBot\n";
 		let longline = "/x/";
 		const disallow = "disallow: ";
@@ -626,17 +611,17 @@ describe("GoogleOnly_LineTooLong", () => {
 		}
 		robotstxt += disallow + longline + "/qux\n";
 
-		// Matches nothing, so URL is allowed
+		// No rule matches this URL, so the matcher allows it.
 		expect(isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/fux")).toBe(
 			true,
 		);
-		// Matches cut off disallow rule
+		// This URL matches the truncated disallow rule.
 		expect(
 			isUserAgentAllowed(robotstxt, "FooBot", `http://foo.bar${longline}/fux`),
 		).toBe(false);
 	});
 
-	test("Allow rule cut off at max length", () => {
+	test("truncates an allow rule at the byte limit", () => {
 		let robotstxt = "user-agent: FooBot\ndisallow: /\n";
 		let longlineA = "/x/";
 		let longlineB = "/x/";
@@ -649,15 +634,15 @@ describe("GoogleOnly_LineTooLong", () => {
 		robotstxt += allow + longlineA + "/qux\n";
 		robotstxt += allow + longlineB + "/qux\n";
 
-		// URL matches the disallow rule
+		// This URL matches the disallow rule.
 		expect(isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/")).toBe(
 			false,
 		);
-		// Matches the allow rule exactly
+		// This URL matches the allow rule exactly.
 		expect(
 			isUserAgentAllowed(robotstxt, "FooBot", `http://foo.bar${longlineA}/qux`),
 		).toBe(true);
-		// Matches cut off allow rule
+		// This URL matches the truncated allow rule.
 		expect(
 			isUserAgentAllowed(robotstxt, "FooBot", `http://foo.bar${longlineB}/fux`),
 		).toBe(true);
@@ -717,7 +702,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 			).toBe(true);
 		});
 
-		test("/Fish.asp does not match (case sensitive)", () => {
+		test("/Fish.asp does not match because case differs", () => {
 			expect(
 				isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/Fish.asp"),
 			).toBe(false);
@@ -742,7 +727,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 		});
 	});
 
-	describe("/fish* pattern (equals /fish)", () => {
+	describe("/fish* pattern, equivalent to /fish", () => {
 		const robotstxt = "user-agent: FooBot\ndisallow: /\nallow: /fish*\n";
 
 		test("/fish matches", () => {
@@ -818,7 +803,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 		});
 	});
 
-	describe("/fish/ pattern (not equal to /fish)", () => {
+	describe("/fish/ pattern, distinct from /fish", () => {
 		const robotstxt = "user-agent: FooBot\ndisallow: /\nallow: /fish/\n";
 
 		test("/fish/ matches", () => {
@@ -961,7 +946,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 			).toBe(false);
 		});
 
-		test("/windows.PHP does not match (case sensitive)", () => {
+		test("/windows.PHP does not match because case differs", () => {
 			expect(
 				isUserAgentAllowed(robotstxt, "FooBot", "http://foo.bar/windows.PHP"),
 			).toBe(false);
@@ -1072,7 +1057,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 		});
 	});
 
-	describe("Order of precedence for group-member records", () => {
+	describe("order of precedence for group-member records", () => {
 		test("/p allows /page", () => {
 			const robotstxt = "user-agent: FooBot\nallow: /p\ndisallow: /\n";
 			expect(
@@ -1080,7 +1065,7 @@ describe("GoogleOnly_DocumentationChecks", () => {
 			).toBe(true);
 		});
 
-		test("Same length: allow wins", () => {
+		test("allow wins when rule lengths tie", () => {
 			const robotstxt =
 				"user-agent: FooBot\nallow: /folder\ndisallow: /folder\n";
 			expect(
@@ -1092,14 +1077,14 @@ describe("GoogleOnly_DocumentationChecks", () => {
 			).toBe(true);
 		});
 
-		test("Longer disallow wins", () => {
+		test("a longer disallow rule wins", () => {
 			const robotstxt = "user-agent: FooBot\nallow: /page\ndisallow: /*.htm\n";
 			expect(
 				isUserAgentAllowed(robotstxt, "FooBot", "http://example.com/page.htm"),
 			).toBe(false);
 		});
 
-		test("/$: only root allowed", () => {
+		test("/$ allows only the root path", () => {
 			const robotstxt = "user-agent: FooBot\nallow: /$\ndisallow: /\n";
 			expect(
 				isUserAgentAllowed(robotstxt, "FooBot", "http://example.com/"),
@@ -1108,261 +1093,5 @@ describe("GoogleOnly_DocumentationChecks", () => {
 				isUserAgentAllowed(robotstxt, "FooBot", "http://example.com/page.html"),
 			).toBe(false);
 		});
-	});
-});
-
-// Different kinds of line endings are all supported.
-describe("ID_LinesNumbersAreCountedCorrectly", () => {
-	class RobotsStatsReporter extends RobotsParseHandler {
-		lastLineSeen = 0;
-		validDirectives = 0;
-		unknownDirectives = 0;
-		sitemap = "";
-
-		handleRobotsStart(): void {
-			this.lastLineSeen = 0;
-			this.validDirectives = 0;
-			this.unknownDirectives = 0;
-			this.sitemap = "";
-		}
-
-		handleRobotsEnd(): void {}
-
-		handleUserAgent(lineNum: number, _value: string): void {
-			this.digest(lineNum);
-		}
-
-		handleAllow(lineNum: number, _value: string): void {
-			this.digest(lineNum);
-		}
-
-		handleDisallow(lineNum: number, _value: string): void {
-			this.digest(lineNum);
-		}
-
-		handleSitemap(lineNum: number, value: string): void {
-			this.digest(lineNum);
-			this.sitemap = value;
-		}
-
-		handleUnknownAction(
-			lineNum: number,
-			_action: string,
-			_value: string,
-		): void {
-			this.lastLineSeen = lineNum;
-			this.unknownDirectives++;
-		}
-
-		private digest(lineNum: number): void {
-			expect(lineNum).toBeGreaterThanOrEqual(this.lastLineSeen);
-			this.lastLineSeen = lineNum;
-			this.validDirectives++;
-		}
-	}
-
-	test("Unix line endings", () => {
-		const report = new RobotsStatsReporter();
-		const kUnixFile =
-			"User-Agent: foo\n" +
-			"Allow: /some/path\n" +
-			"User-Agent: bar\n" +
-			"\n" +
-			"\n" +
-			"Disallow: /\n";
-		parseRobotsTxt(kUnixFile, report);
-		expect(report.validDirectives).toBe(4);
-		expect(report.lastLineSeen).toBe(6);
-	});
-
-	test("DOS line endings", () => {
-		const report = new RobotsStatsReporter();
-		const kDosFile =
-			"User-Agent: foo\r\n" +
-			"Allow: /some/path\r\n" +
-			"User-Agent: bar\r\n" +
-			"\r\n" +
-			"\r\n" +
-			"Disallow: /\r\n";
-		parseRobotsTxt(kDosFile, report);
-		expect(report.validDirectives).toBe(4);
-		expect(report.lastLineSeen).toBe(6);
-	});
-
-	test("Mac line endings", () => {
-		const report = new RobotsStatsReporter();
-		const kMacFile =
-			"User-Agent: foo\r" +
-			"Allow: /some/path\r" +
-			"User-Agent: bar\r" +
-			"\r" +
-			"\r" +
-			"Disallow: /\r";
-		parseRobotsTxt(kMacFile, report);
-		expect(report.validDirectives).toBe(4);
-		expect(report.lastLineSeen).toBe(6);
-	});
-
-	test("No final newline", () => {
-		const report = new RobotsStatsReporter();
-		const kNoFinalNewline =
-			"User-Agent: foo\n" +
-			"Allow: /some/path\n" +
-			"User-Agent: bar\n" +
-			"\n" +
-			"\n" +
-			"Disallow: /";
-		parseRobotsTxt(kNoFinalNewline, report);
-		expect(report.validDirectives).toBe(4);
-		expect(report.lastLineSeen).toBe(6);
-	});
-
-	test("Mixed line endings", () => {
-		const report = new RobotsStatsReporter();
-		const kMixedFile =
-			"User-Agent: foo\n" +
-			"Allow: /some/path\r\n" +
-			"User-Agent: bar\n" +
-			"\r\n" +
-			"\n" +
-			"Disallow: /";
-		parseRobotsTxt(kMixedFile, report);
-		expect(report.validDirectives).toBe(4);
-		expect(report.lastLineSeen).toBe(6);
-	});
-});
-
-// BOM characters are skipped.
-describe("ID_UTF8ByteOrderMarkIsSkipped", () => {
-	class RobotsStatsReporter extends RobotsParseHandler {
-		validDirectives = 0;
-		unknownDirectives = 0;
-
-		handleRobotsStart(): void {
-			this.validDirectives = 0;
-			this.unknownDirectives = 0;
-		}
-
-		handleRobotsEnd(): void {}
-
-		handleUserAgent(lineNum: number, _value: string): void {
-			this.validDirectives++;
-		}
-
-		handleAllow(lineNum: number, _value: string): void {
-			this.validDirectives++;
-		}
-
-		handleDisallow(lineNum: number, _value: string): void {
-			this.validDirectives++;
-		}
-
-		handleSitemap(lineNum: number, _value: string): void {
-			this.validDirectives++;
-		}
-
-		handleUnknownAction(
-			lineNum: number,
-			_action: string,
-			_value: string,
-		): void {
-			this.unknownDirectives++;
-		}
-	}
-
-	test("Full BOM is skipped", () => {
-		const report = new RobotsStatsReporter();
-		const kUtf8FileFullBOM = "\xEF\xBB\xBFUser-Agent: foo\nAllow: /AnyValue\n";
-		parseRobotsTxt(kUtf8FileFullBOM, report);
-		expect(report.validDirectives).toBe(2);
-		expect(report.unknownDirectives).toBe(0);
-	});
-
-	test("Partial BOM (2 bytes) is skipped", () => {
-		const report = new RobotsStatsReporter();
-		const kUtf8FilePartial2BOM = "\xEF\xBBUser-Agent: foo\nAllow: /AnyValue\n";
-		parseRobotsTxt(kUtf8FilePartial2BOM, report);
-		expect(report.validDirectives).toBe(2);
-		expect(report.unknownDirectives).toBe(0);
-	});
-
-	test("Partial BOM (1 byte) is skipped", () => {
-		const report = new RobotsStatsReporter();
-		const kUtf8FilePartial1BOM = "\xEFUser-Agent: foo\nAllow: /AnyValue\n";
-		parseRobotsTxt(kUtf8FilePartial1BOM, report);
-		expect(report.validDirectives).toBe(2);
-		expect(report.unknownDirectives).toBe(0);
-	});
-
-	test("Broken BOM produces garbage line", () => {
-		const report = new RobotsStatsReporter();
-		const kUtf8FileBrokenBOM =
-			"\xEF\x11\xBFUser-Agent: foo\nAllow: /AnyValue\n";
-		parseRobotsTxt(kUtf8FileBrokenBOM, report);
-		expect(report.validDirectives).toBe(1);
-		expect(report.unknownDirectives).toBe(1);
-	});
-
-	test("BOM in middle of file is garbage", () => {
-		const report = new RobotsStatsReporter();
-		const kUtf8BOMSomewhereInMiddleOfFile =
-			"User-Agent: foo\n\xEF\xBB\xBFAllow: /AnyValue\n";
-		parseRobotsTxt(kUtf8BOMSomewhereInMiddleOfFile, report);
-		expect(report.validDirectives).toBe(1);
-		expect(report.unknownDirectives).toBe(1);
-	});
-});
-
-// Sitemap directive parsing.
-describe("ID_NonStandardLineExample_Sitemap", () => {
-	class RobotsStatsReporter extends RobotsParseHandler {
-		sitemap = "";
-
-		handleRobotsStart(): void {
-			this.sitemap = "";
-		}
-
-		handleRobotsEnd(): void {}
-		handleUserAgent(_lineNum: number, _value: string): void {}
-		handleAllow(_lineNum: number, _value: string): void {}
-		handleDisallow(_lineNum: number, _value: string): void {}
-
-		handleSitemap(_lineNum: number, value: string): void {
-			this.sitemap = value;
-		}
-
-		handleUnknownAction(
-			_lineNum: number,
-			_action: string,
-			_value: string,
-		): void {}
-	}
-
-	test("Sitemap at end of file", () => {
-		const report = new RobotsStatsReporter();
-		const sitemapLoc = "http://foo.bar/sitemap.xml";
-		const robotstxt =
-			"User-Agent: foo\n" +
-			"Allow: /some/path\n" +
-			"User-Agent: bar\n" +
-			"\n" +
-			"\n" +
-			`Sitemap: ${sitemapLoc}\n`;
-		parseRobotsTxt(robotstxt, report);
-		expect(report.sitemap).toBe(sitemapLoc);
-	});
-
-	test("Sitemap at beginning of file", () => {
-		const report = new RobotsStatsReporter();
-		const sitemapLoc = "http://foo.bar/sitemap.xml";
-		const robotstxt =
-			`Sitemap: ${sitemapLoc}\n` +
-			"User-Agent: foo\n" +
-			"Allow: /some/path\n" +
-			"User-Agent: bar\n" +
-			"\n" +
-			"\n";
-		parseRobotsTxt(robotstxt, report);
-		expect(report.sitemap).toBe(sitemapLoc);
 	});
 });
